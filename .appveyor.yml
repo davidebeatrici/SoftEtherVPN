@@ -54,6 +54,8 @@ for:
   after_build:
     - sudo dpkg -i build/softether-vpn*.deb
     - sudo systemctl restart softether-vpnserver
+  on_failure:
+    - sudo journalctl -xe
   artifacts:
     - path: build/*.deb
       name: Ubuntu
@@ -68,6 +70,8 @@ for:
   after_build:
     - sudo dpkg -i build/softether-vpn*.deb
     - sudo systemctl restart softether-vpnserver
+  on_failure:
+    - sudo journalctl -xe
   artifacts:
     - path: build/*.deb
       name: Ubuntu
