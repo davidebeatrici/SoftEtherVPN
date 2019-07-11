@@ -296,6 +296,7 @@ struct VH
 	UINT DhcpDns2;					// DNS server address 2
 	char DhcpDomain[MAX_HOST_NAME_LEN + 1];	// Assigned domain name
 	LIST *DhcpLeaseList;			// DHCP lease list
+	LIST *DhcpReservedLeases;		// Reserved DHCP leases
 	UINT64 LastDhcpPolling;			// Time which the DHCP list polled last
 	bool SaveLog;					// Save a log
 	DHCP_CLASSLESS_ROUTE_TABLE PushRoute;	// Pushing routing table
@@ -335,6 +336,7 @@ struct VH_OPTION
 	bool SaveLog;					// Save a log
 	bool ApplyDhcpPushRoutes;		// Apply flag for DhcpPushRoutes
 	char DhcpPushRoutes[MAX_DHCP_CLASSLESS_ROUTE_TABLE_STR_SIZE];	// DHCP pushing routes
+	LIST *DhcpReservedLeases;		// Reserved DHCP leases
 };
 
 // DHCP lease entry
@@ -348,6 +350,14 @@ struct DHCP_LEASE
 	UINT IpAddress;					// IP address
 	UINT Mask;						// Subnet mask
 	char *Hostname;					// Host name
+};
+
+// Reserved DHCP lease
+struct DHCP_RESERVED_LEASE
+{
+	IP Ip;							// IP address
+	UCHAR MacAddress[6];			// MAC address
+	char Hostname[MAX_HOST_NAME_LEN + 1];	// Hostname
 };
 
 // DNS query
@@ -515,6 +525,8 @@ DHCP_LEASE *SearchDhcpLeaseByIp(VH *v, UINT ip);
 UINT ServeDhcpDiscover(VH *v, UCHAR *mac, UINT request_ip);
 UINT GetFreeDhcpIpAddress(VH *v);
 UINT GetFreeDhcpIpAddressByRandom(VH *v, UCHAR *mac);
+UINT GetDhcpReservedIpAddress(VH *v, UCHAR *mac, char *hostname);
+bool IsDhcpReservedIpAddress(VH *v, UINT ip);
 UINT ServeDhcpRequest(VH *v, UCHAR *mac, UINT request_ip);
 void VirtualDhcpSend(VH *v, UINT tran_id, UINT dest_ip, UINT dest_port,
 					 UINT new_ip, UCHAR *client_mac, BUF *b, UINT hw_type, UINT hw_addr_size);

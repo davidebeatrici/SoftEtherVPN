@@ -1273,6 +1273,7 @@ bool IsZeroIP6Addr(IPV6_ADDR *addr);
 UINT IntToSubnetMask32(UINT i);
 void IntToSubnetMask4(IP *ip, UINT i);
 bool GetNetBiosName(char *name, UINT size, IP *ip);
+bool IsZeroMacAddress(UCHAR *mac_address);
 bool NormalizeMacAddress(char *dst, UINT size, char *src);
 SOCKLIST *NewSockList();
 void StopSockList(SOCKLIST *sl);

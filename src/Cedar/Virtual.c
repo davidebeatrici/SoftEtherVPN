@@ -8957,7 +8957,7 @@ void FreeDhcpServer(VH *v)
 	}
 
 	// Remove the all lease entries
-	for (i = 0;i < LIST_NUM(v->DhcpLeaseList);i++)
+	for (i = 0; i < LIST_NUM(v->DhcpLeaseList); ++i)
 	{
 		DHCP_LEASE *d = LIST_DATA(v->DhcpLeaseList, i);
 		FreeDhcpLease(d);
@@ -8965,6 +8965,14 @@ void FreeDhcpServer(VH *v)
 
 	ReleaseList(v->DhcpLeaseList);
 	v->DhcpLeaseList = NULL;
+
+	for (i = 0; i < LIST_NUM(v->DhcpReservedLeases); ++i)
+	{
+		DHCP_LEASE *d = LIST_DATA(v->DhcpReservedLeases, i);
+	}
+
+	ReleaseList(v->DhcpReservedLeases);
+	v->DhcpReservedLeases = NULL;
 }
 
 // Initialize the DHCP server
@@ -9234,7 +9242,7 @@ UINT GetFreeDhcpIpAddress(VH *v)
 	for (i = ip_start; i <= ip_end;i++)
 	{
 		UINT ip = Endian32(i);
-		if (SearchDhcpLeaseByIp(v, ip) == NULL)
+		if (IsDhcpReservedIpAddress(v, ip) == false && SearchDhcpLeaseByIp(v, ip) == NULL)
 		{
 			// A free IP address is found
 			return ip;
@@ -9245,7 +9253,7 @@ UINT GetFreeDhcpIpAddress(VH *v)
 	return 0;
 }
 
-// Take an appropriate IP addresses that can be assigned newly (random)
+// Take an appropriate IP address that can be assigned newly (random)
 UINT GetFreeDhcpIpAddressByRandom(VH *v, UCHAR *mac)
 {
 	UINT ip_start, ip_end;
@@ -9268,7 +9276,7 @@ UINT GetFreeDhcpIpAddressByRandom(VH *v, UCHAR *mac)
 	num_retry = (ip_end - ip_start + 1) * 2;
 	num_retry = MIN(num_retry, 65536 * 2);
 
-	for (i = 0;i < num_retry;i++)
+	for (i = 0; i < num_retry; ++i)
 	{
 		UCHAR rand_seed[sizeof(UINT) + 6];
 		UCHAR hash[16];
@@ -9284,7 +9292,7 @@ UINT GetFreeDhcpIpAddressByRandom(VH *v, UCHAR *mac)
 
 		new_ip = Endian32(ip_start + (rand_int % (ip_end - ip_start + 1)));
 
-		if (SearchDhcpLeaseByIp(v, new_ip) == NULL)
+		if (IsDhcpReservedIpAddress(v, new_ip) == false && SearchDhcpLeaseByIp(v, new_ip) == NULL)
 		{
 			// A free IP address is found
 			return new_ip;
@@ -9293,6 +9301,97 @@ UINT GetFreeDhcpIpAddressByRandom(VH *v, UCHAR *mac)
 
 	// There is no free address
 	return 0;
+}
+
+// Return a reserved IP address for the corresponding MAC address, hostname or both
+UINT GetDhcpReservedIpAddress(VH *v, UCHAR *mac, char *hostname)
+{
+	UINT i;
+	// Validate arguments
+	if (v == NULL || (mac == NULL && hostname == NULL)) {
+		return 0;
+	}
+
+	if (mac != NULL) {
+		char mac_str[18];
+		MacToStr(mac_str, sizeof(mac_str), mac);
+		Debug("GetDhcpStaticIpAddress(): MAC address: %s\n", mac_str);
+	} else {
+		Debug("GetDhcpStaticIpAddress(): 'mac' parameter is NULL\n");
+	}
+
+	if (IsEmptyStr(hostname) == false) {
+		Debug("GetDhcpStaticIpAddress(): hostname: %s\n", hostname);
+	} else {
+		Debug("GetDhcpStaticIpAddress(): hostname not present\n");
+	}
+
+	for (i = 0; i < LIST_NUM(v->DhcpReservedLeases); ++i)
+	{
+		DHCP_RESERVED_LEASE *d = LIST_DATA(v->DhcpReservedLeases, i);
+
+		bool check_mac, check_hostname;
+		check_mac = IsZeroMacAddress(d->MacAddress) == false;
+		check_hostname = IsEmptyStr(d->Hostname) == false;
+
+		if (check_mac == false && check_hostname == false)
+		{
+			// Reserved static IP address, meant to be set on the client
+			continue;
+		}
+
+		if (check_mac == true)
+		{
+			if (Cmp(mac, d->MacAddress, 6) != 0)
+			{
+				// MAC address not corresponding
+				continue;
+			}
+		}
+
+		if (check_hostname)
+		{
+			if (StrCmp(hostname, d->Hostname) != 0)
+			{
+				// Hostname not corresponding
+				continue;
+			}
+		}
+
+		{
+			char ip_str[16];
+			IPToStr(ip_str, sizeof(ip_str), &d->Ip);
+			Debug("GetDhcpStaticIpAddress(): found %s\n", ip_str);
+		}
+
+		return IPToUINT(&d->Ip);
+	}
+
+	Debug("GetDhcpStaticIpAddress(): no IP address found, returning 0\n");
+
+	return 0;
+}
+
+// Checks whether the IP address is reserved
+bool IsDhcpReservedIpAddress(VH *v, UINT ip)
+{
+	UINT i;
+	// Validate arguments
+	if (v == NULL || ip == 0)
+	{
+		return false;
+	}
+
+	for (i = 0; i < LIST_NUM(v->DhcpReservedLeases); ++i)
+	{
+		DHCP_RESERVED_LEASE *d = LIST_DATA(v->DhcpReservedLeases, i);
+		if (IPToUINT(&d->Ip) == ip)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 // Virtual DHCP Server
@@ -9378,20 +9477,25 @@ void VirtualDhcpServer(VH *v, PKT *p)
 	{
 		// Operate as the server
 		UINT ip = 0;
+		bool is_reserved = false;
 
-		if (opt->RequestedIp == 0)
-		{
-			opt->RequestedIp = p->L3.IPv4Header->SrcIP;
-		}
-		if (opt->Opcode == DHCP_DISCOVER)
-		{
-			// Return an IP address that can be used
-			ip = ServeDhcpDiscover(v, p->MacAddressSrc, opt->RequestedIp);
-		}
-		else if (opt->Opcode == DHCP_REQUEST)
-		{
-			// Determine the IP address
-			ip = ServeDhcpRequest(v, p->MacAddressSrc, opt->RequestedIp);
+		if ((ip = GetDhcpReservedIpAddress (v, p->MacAddressSrc, opt->Hostname))) {
+			is_reserved = true;
+		} else {
+			if (opt->RequestedIp == 0)
+			{
+				opt->RequestedIp = p->L3.IPv4Header->SrcIP;
+			}
+			if (opt->Opcode == DHCP_DISCOVER)
+			{
+				// Return an IP address that can be used
+				ip = ServeDhcpDiscover(v, p->MacAddressSrc, opt->RequestedIp);
+			}
+			else if (opt->Opcode == DHCP_REQUEST)
+			{
+				// Determine the IP address
+				ip = ServeDhcpRequest(v, p->MacAddressSrc, opt->RequestedIp);
+			}
 		}
 
 		if (ip != 0 || opt->Opcode == DHCP_INFORM)
@@ -9433,7 +9537,7 @@ void VirtualDhcpServer(VH *v, PKT *p)
 
 				ret.Opcode = (opt->Opcode == DHCP_DISCOVER ? DHCP_OFFER : DHCP_ACK);
 				ret.ServerAddress = v->HostIP;
-				if (v->DhcpExpire == INFINITE)
+				if (is_reserved || v->DhcpExpire == INFINITE)
 				{
 					ret.LeaseTime = INFINITE;
 				}
@@ -9948,6 +10052,9 @@ void SetVirtualHostOption(VH *v, VH_OPTION *vo)
 
 		// Domain name
 		StrCpy(v->DhcpDomain, sizeof(v->DhcpDomain), vo->DhcpDomainName);
+
+		// Reserved leases list
+		v->DhcpReservedLeases = CloneList(vo->DhcpReservedLeases);
 
 		// Save a log
 		v->SaveLog = vo->SaveLog;

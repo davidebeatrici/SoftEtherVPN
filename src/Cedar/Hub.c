@@ -6583,15 +6583,20 @@ void CleanupHub(HUB *h)
 	FreeTraffic(h->OldTraffic);
 	Free(h->Option);
 
+	for (i = 0; i < LIST_NUM(h->SecureNATOption->DhcpReservedLeases); ++i)
+	{
+		Free(LIST_DATA(h->SecureNATOption->DhcpReservedLeases, i));
+	}
+	ReleaseList(h->SecureNATOption->DhcpReservedLeases);
+
 	Free(h->SecureNATOption);
 
 	DeleteLock(h->TrafficLock);
 
-	for (i = 0;i < LIST_NUM(h->TicketList);i++)
+	for (i = 0; i < LIST_NUM(h->TicketList); ++i)
 	{
 		Free(LIST_DATA(h->TicketList, i));
 	}
-
 	ReleaseList(h->TicketList);
 
 	DeleteLock(h->RadiusOptionLock);
@@ -6599,7 +6604,7 @@ void CleanupHub(HUB *h)
 	FreeLog(h->PacketLogger);
 	FreeLog(h->SecurityLogger);
 
-	for (i = 0;i < LIST_NUM(h->AdminOptionList);i++)
+	for (i = 0; i < LIST_NUM(h->AdminOptionList); ++i)
 	{
 		Free(LIST_DATA(h->AdminOptionList, i));
 	}

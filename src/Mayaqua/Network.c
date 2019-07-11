@@ -7401,6 +7401,18 @@ bool NormalizeMacAddress(char *dst, UINT size, char *src)
 	return ret;
 }
 
+// Check whether the MAC address is empty
+bool IsZeroMacAddress(UCHAR *mac_address)
+{
+	// Validate arguments
+	if (mac_address == NULL)
+	{
+		return true;
+	}
+
+	return IsZero(mac_address, 6);
+}
+
 // Identify whether the IP address is empty
 bool IsZeroIP(IP *ip)
 {

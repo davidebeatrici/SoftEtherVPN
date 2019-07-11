@@ -1287,6 +1287,8 @@ void NiSetDefaultVhOption(NAT *n, VH_OPTION *o)
 	}
 
 	Zero(o, sizeof(VH_OPTION));
+	o->DhcpReservedLeases = NewList(NULL);
+
 	GenMacAddress(o->MacAddress);
 
 	// Set the virtual IP to 192.168.30.1/24
@@ -1347,7 +1349,9 @@ void NiInitConfig(NAT *n)
 // Read the virtual host option (extended)
 void NiLoadVhOptionEx(VH_OPTION *o, FOLDER *root)
 {
-	FOLDER *host, *nat, *dhcp;
+	FOLDER *host, *nat, *dhcp, *leases;
+	TOKEN_LIST *t;
+	UINT i;
 	char mac_address[MAX_SIZE];
 	// Validate arguments
 	if (o == NULL || root == NULL)
@@ -1358,8 +1362,10 @@ void NiLoadVhOptionEx(VH_OPTION *o, FOLDER *root)
 	host = CfgGetFolder(root, "VirtualHost");
 	nat = CfgGetFolder(root, "VirtualRouter");
 	dhcp = CfgGetFolder(root, "VirtualDhcpServer");
+	leases = CfgGetFolder(dhcp, "ReservedLeases");
 
 	Zero(o, sizeof(VH_OPTION));
+	o->DhcpReservedLeases = NewList(NULL);
 
 	GenMacAddress(o->MacAddress);
 	if (CfgGetStr(host, "VirtualHostMacAddress", mac_address, sizeof(mac_address)))
@@ -1406,6 +1412,48 @@ void NiLoadVhOptionEx(VH_OPTION *o, FOLDER *root)
 	{
 		//GetDomainName(o->DhcpDomainName, sizeof(o->DhcpDomainName));
 	}
+
+	t = CfgEnumFolderToTokenList(leases);
+	if (t == NULL) {
+		return;
+	}
+
+	for (i = 0; i < t->NumTokens; ++i)
+	{
+		FOLDER *lease_folder = CfgGetFolder(leases, t->Token[i]);
+		if (lease_folder != NULL)
+		{
+			DHCP_RESERVED_LEASE *drl = Malloc(sizeof(DHCP_RESERVED_LEASE));
+			Zero(drl->MacAddress, sizeof(drl->MacAddress));
+
+			if (StrToIP(&drl->Ip, t->Token[i]) == false)
+			{
+				continue;
+			}
+
+			if (CfgGetStr(lease_folder, "Hostname", drl->Hostname, sizeof(drl->Hostname)) == false)
+			{
+				ClearStr(drl->Hostname, sizeof(drl->Hostname));
+			}
+
+			if (CfgGetStr(lease_folder, "MacAddress", mac_address, sizeof(mac_address)))
+			{
+				BUF *b = StrToBin(mac_address);
+				if (b != NULL)
+				{
+					if (b->Size == 6)
+					{
+						Copy(drl->MacAddress, b->Buf, 6);
+					}
+				}
+				FreeBuf(b);
+			}
+
+			Add(o->DhcpReservedLeases, drl);
+		}
+	}
+
+	FreeToken(t);
 
 	o->SaveLog = CfgGetBool(root, "SaveLog");
 }
@@ -1500,8 +1548,9 @@ void NiWriteClientData(NAT *n, FOLDER *root)
 // Write the virtual host option (extended)
 void NiWriteVhOptionEx(VH_OPTION *o, FOLDER *root)
 {
-	FOLDER *host, *nat, *dhcp;
-	char mac_address[MAX_SIZE];
+	FOLDER *host, *nat, *dhcp, *leases;
+	UINT i;
+	char buffer[MAX_SIZE];
 	// Validate arguments
 	if (o == NULL || root == NULL)
 	{
@@ -1511,9 +1560,10 @@ void NiWriteVhOptionEx(VH_OPTION *o, FOLDER *root)
 	host = CfgCreateFolder(root, "VirtualHost");
 	nat = CfgCreateFolder(root, "VirtualRouter");
 	dhcp = CfgCreateFolder(root, "VirtualDhcpServer");
+	leases = CfgCreateFolder(dhcp, "ReservedLeases");
 
-	MacToStr(mac_address, sizeof(mac_address), o->MacAddress);
-	CfgAddStr(host, "VirtualHostMacAddress", mac_address);
+	MacToStr(buffer, sizeof(buffer), o->MacAddress);
+	CfgAddStr(host, "VirtualHostMacAddress", buffer);
 	CfgAddIp(host, "VirtualHostIp", &o->Ip);
 	CfgAddIp(host, "VirtualHostIpSubnetMask", &o->Mask);
 
@@ -1532,6 +1582,19 @@ void NiWriteVhOptionEx(VH_OPTION *o, FOLDER *root)
 	CfgAddIp(dhcp, "DhcpDnsServerAddress2", &o->DhcpDnsServerAddress2);
 	CfgAddStr(dhcp, "DhcpDomainName", o->DhcpDomainName);
 	CfgAddStr(dhcp, "DhcpPushRoutes", o->DhcpPushRoutes);
+
+	for (i = 0; i < LIST_NUM(o->DhcpReservedLeases); ++i)
+	{
+		DHCP_RESERVED_LEASE *drl = LIST_DATA(o->DhcpReservedLeases, i);
+		FOLDER *lease;
+
+		IPToStr(buffer, sizeof(buffer), &drl->Ip);
+		lease = CfgCreateFolder(leases, buffer);
+
+		IsZeroMacAddress(drl->MacAddress) ? ClearStr(buffer, sizeof(buffer)) : MacToStr(buffer, sizeof(buffer), drl->MacAddress);
+		CfgAddStr(lease, "MacAddress", buffer);
+		CfgAddStr(lease, "Hostname", drl->Hostname);
+	}
 
 	CfgAddBool(root, "SaveLog", o->SaveLog);
 }

@@ -161,6 +161,7 @@ typedef struct TCP_OPTION TCP_OPTION;
 typedef struct VH VH;
 typedef struct VH_OPTION VH_OPTION;
 typedef struct DHCP_LEASE DHCP_LEASE;
+typedef struct DHCP_RESERVED_LEASE DHCP_RESERVED_LEASE;
 typedef struct NATIVE_NAT NATIVE_NAT;
 typedef struct NATIVE_NAT_ENTRY NATIVE_NAT_ENTRY;
 typedef struct DNS_PARSED_PACKET DNS_PARSED_PACKET;
